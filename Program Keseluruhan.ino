@@ -6,7 +6,6 @@
 #include <addons/TokenHelper.h>
 #include <addons/RTDBHelper.h>
 
-// ==================== KONFIGURASI WIFI & FIREBASE ====================
 #define WIFI_SSID "4G-MIFI-442F"
 #define WIFI_PASSWORD "1234567890"
 
@@ -21,13 +20,11 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 25200; 
 const int   daylightOffset_sec = 0;
 
-// ==================== PIN SENSOR & AKTUATOR ====================
 #define TRIG_PIN 18
 #define ECHO_PIN 19
 #define FLOW_SENSOR_PIN 14
 #define BUZZER_PIN 23 
 
-// ==================== VARIABEL SENSOR & FUZZY ====================
 volatile int flowPulse = 0;
 float debit = 0.0;
 float tinggiAir = 0.0;
@@ -35,12 +32,10 @@ float tinggiAir = 0.0;
 const float TINGGI_DASAR_SUNGAI = 205.0; 
 float nilaiKondisi = 0.0; 
 
-// INTERRUPT FLOW SENSOR
 void IRAM_ATTR flowInterrupt() {
   flowPulse++;
 }
 
-// ==================== FUNGSI KEANGGOTAAN FUZZY ====================
 float trapmf(float x, float a, float b, float c, float d) {
   if (x < a || x > d) return 0.0;
   if (x >= b && x <= c) return 1.0;
@@ -57,7 +52,6 @@ float trimf(float x, float a, float b, float c) {
   return 0.0;
 }
 
-// ==================== FUNGSI PEMBACAAN SENSOR ====================
 float bacaTinggiAir() {
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
@@ -88,7 +82,6 @@ float bacaDebit() {
   return (flowPulse / 7.5);
 }
 
-// ==================== FUNGSI WAKTU FIREBASE ====================
 String dapatkanWaktu() {
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
@@ -99,7 +92,6 @@ String dapatkanWaktu() {
   return String(timeStringBuff);
 }
 
-// ==================== LOGIKA FUZZY MAMDANI ====================
 String fuzzyMamdani(float tinggi, float flow) {
   // --- Fuzzifikasi ---
   float tinggiRendah = trapmf(tinggi, 0, 0, 75, 85);
@@ -110,25 +102,22 @@ String fuzzyMamdani(float tinggi, float flow) {
   float deras = trimf(flow, 5, 8, 11);
   float sangatDeras = trapmf(flow, 9, 11, 16, 16);
 
-  // --- Rule Base (Evaluasi Aturan Berdasarkan Tabel 3.4) ---
-  float r1 = min(tinggiRendah, normal);       // No.1: Rendah & Normal -> Aman
-  float r2 = min(tinggiRendah, deras);        // No.2: Rendah & Deras -> Aman
-  float r3 = min(tinggiRendah, sangatDeras);  // No.3: Rendah & Sangat Deras -> Waspada
+  float r1 = min(tinggiRendah, normal);
+  float r2 = min(tinggiRendah, deras);
+  float r3 = min(tinggiRendah, sangatDeras);
 
-  float r4 = min(tinggiSedang, normal);       // No.4: Sedang & Normal -> Waspada
-  float r5 = min(tinggiSedang, deras);        // No.5: Sedang & Deras -> Waspada
-  float r6 = min(tinggiSedang, sangatDeras);  // No.6: Sedang & Sangat Deras -> Bahaya
+  float r4 = min(tinggiSedang, normal);
+  float r5 = min(tinggiSedang, deras);
+  float r6 = min(tinggiSedang, sangatDeras);
 
-  float r7 = min(tinggiTinggi, normal);       // No.7: Tinggi & Normal -> Bahaya
-  float r8 = min(tinggiTinggi, deras);        // No.8: Tinggi & Deras -> Bahaya
-  float r9 = min(tinggiTinggi, sangatDeras);  // No.9: Tinggi & Sangat Deras -> Bahaya
+  float r7 = min(tinggiTinggi, normal);
+  float r8 = min(tinggiTinggi, deras);
+  float r9 = min(tinggiTinggi, sangatDeras);
 
-  // Pengelompokan status (Agregasi Rule)
   float outAman = max(r1, r2);
   float outWaspada = max(r3, max(r4, r5));
   float outBahaya = max(r6, max(r7, max(r8, r9)));
 
-  // --- Defuzzifikasi (Metode Centroid / Center of Area) ---
   float pembilang = 0.0;
   float penyebut = 0.0;
   int langkah = 2;
@@ -156,7 +145,6 @@ String fuzzyMamdani(float tinggi, float flow) {
     nilaiKondisi = 0.0; 
   }
 
-  // --- Penentuan Status ---
   if (nilaiKondisi >= 66.7) {
     return "Bahaya";
   } else if (nilaiKondisi >= 33.4) {
@@ -174,7 +162,7 @@ void setup() {
   pinMode(FLOW_SENSOR_PIN, INPUT_PULLUP);
   
   pinMode(BUZZER_PIN, OUTPUT);
-  noTone(BUZZER_PIN); // Memastikan buzzer pasif diam saat alat baru menyala
+  noTone(BUZZER_PIN);
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Menghubungkan ke Wi-Fi");
@@ -205,42 +193,34 @@ void loop() {
   
   String statusBanjir = fuzzyMamdani(tinggiAir, debit);
   
-  // Menggunakan satu fungsi waktu terpadu tanpa Sheets
   String waktuSekarang = dapatkanWaktu(); 
 
-  // ==================== KONTROL BUZZER PASIF ====================
+
   if (statusBanjir == "Bahaya") {
-    tone(BUZZER_PIN, 2300); // Mengirimkan sinyal frekuensi 2300 Hz
+    tone(BUZZER_PIN, 2300);
   } else {
-    noTone(BUZZER_PIN);     // Mematikan sinyal frekuensi sepenuhnya
+    noTone(BUZZER_PIN);
   }
 
-  // ==================== TAMPILKAN DI SERIAL ====================
   Serial.print("Waktu        : "); Serial.println(waktuSekarang);
   Serial.print("Tinggi Air   : "); Serial.print(tinggiAir, 1); Serial.println(" cm");
   Serial.print("Debit Air    : "); Serial.print(debit, 1); Serial.println(" L/min");
   Serial.print("Status       : "); Serial.println(statusBanjir);
 
-  // ==================== KIRIM DATA KE FIREBASE ====================
   if (Firebase.ready()) {
-    // 1. Catat Waktu Mulai (Untuk pengujian Serial Monitor)
     unsigned long waktuMulaiKirim = millis();
 
-    // 2. Mengambil Waktu Epoch Presisi Milidetik (Untuk Aplikasi Kodular)
     struct timeval tv;
     gettimeofday(&tv, NULL);
     double epochMillis = (double)(tv.tv_sec) * 1000.0 + (double)(tv.tv_usec) / 1000.0;
 
-    // 3. Proses Push Data
     Firebase.RTDB.setString(&fbdo, "/Pemantauan/Waktu", waktuSekarang);
     Firebase.RTDB.setFloat(&fbdo, "/Pemantauan/TinggiAir", tinggiAir);
     Firebase.RTDB.setFloat(&fbdo, "/Pemantauan/DebitAir", debit);
     Firebase.RTDB.setString(&fbdo, "/Pemantauan/Status", statusBanjir);
     
-    // Baris baru untuk menembakkan tag "Timestamp" ke Aplikasi
     Firebase.RTDB.setDouble(&fbdo, "/Pemantauan/Timestamp", epochMillis); 
 
-    // 4. Catat Waktu Selesai & Tampilkan Latensi Lokal
     unsigned long waktuSelesaiKirim = millis();
     unsigned long delayFirebase = waktuSelesaiKirim - waktuMulaiKirim;
 
